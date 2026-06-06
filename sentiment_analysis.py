@@ -1,93 +1,110 @@
 import pandas as pd
-import nltk
 import re
+import nltk
 
 from nltk.corpus import stopwords
 from nltk.stem import WordNetLemmatizer
 
+from sklearn.model_selection import train_test_split
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import classification_report
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 
-# Download required NLTK data
 nltk.download('stopwords')
 nltk.download('wordnet')
 
-# Load dataset
-df = pd.read_csv("reviews.csv")
+data = pd.read_csv("reviews.csv")
 
-# Remove empty rows
-df = df.dropna()
+print("Dataset Shape:", data.shape)
+print("\nFirst 5 Records:")
+print(data.head())
 
-# Convert columns to string
-df["text"] = df["text"].astype(str)
-df["sentiment"] = df["sentiment"].astype(str)
-
-# Initialize lemmatizer
 lemmatizer = WordNetLemmatizer()
+stop_words = set(stopwords.words('english'))
 
-# Text preprocessing function
 def preprocess(text):
-    text = text.lower()
-
-    # Remove special characters and numbers
-    text = re.sub(r'[^a-zA-Z ]', '', text)
+    text = str(text).lower()
+    text = re.sub(r'[^a-zA-Z\s]', '', text)
 
     words = text.split()
 
-    # Remove stopwords
-    words = [w for w in words if w not in stopwords.words('english')]
-
-    # Lemmatization
-    words = [lemmatizer.lemmatize(w) for w in words]
+    words = [
+        lemmatizer.lemmatize(word)
+        for word in words
+        if word not in stop_words
+    ]
 
     return " ".join(words)
 
-# Clean text
-df["clean_text"] = df["text"].apply(preprocess)
+data["clean_text"] = data["text"].apply(preprocess)
 
-# Convert text to numerical features
-vectorizer = TfidfVectorizer()
+vectorizer = TfidfVectorizer(max_features=3000)
 
-X = vectorizer.fit_transform(df["clean_text"])
-y = df["sentiment"]
-print(df[["text","sentiment"]])
-print("\n Unique sentiments:",df["sentiment"].unique())
+X = vectorizer.fit_transform(data["clean_text"])
+y = data["sentiment"]
 
-# Split dataset
 X_train, X_test, y_train, y_test = train_test_split(
     X,
     y,
-    test_size=0.25,
-    random_state=42
+    test_size=0.20,
+    random_state=42,
+    stratify=y
 )
 
-# Train model
 model = LogisticRegression(max_iter=1000)
+
 model.fit(X_train, y_train)
 
-# Evaluate model
-predictions = model.predict(X_test)
+y_pred = model.predict(X_test)
 
-print("\nModel Evaluation:\n")
-print(classification_report(y_test, predictions))
+print("\n========== MODEL PERFORMANCE ==========")
+print("Accuracy:", round(accuracy_score(y_test, y_pred) * 100, 2), "%")
 
-print("\nModel trained successfully!")
+print("\nClassification Report:")
+print(classification_report(y_test, y_pred))
 
-# User input loop
+print("\nConfusion Matrix:")
+print(confusion_matrix(y_test, y_pred))
+
+def predict_sentiment(review):
+
+    review = preprocess(review)
+
+    review_vector = vectorizer.transform([review])
+
+    prediction = model.predict(review_vector)[0]
+
+    probabilities = model.predict_proba(review_vector)[0]
+
+    print("\nConfidence Scores")
+
+    for label, score in zip(model.classes_, probabilities):
+        print(f"{label}: {score:.2f}")
+
+    return prediction
+
+print("\n========== SAMPLE TESTS ==========")
+
+samples = [
+    "The food was amazing and delicious",
+    "Average quality and normal service",
+    "Worst experience ever"
+]
+
+for review in samples:
+    result = predict_sentiment(review)
+    print(f"\nReview: {review}")
+    print("Predicted Sentiment:", result)
+
+print("\n========== LIVE PREDICTION ==========")
+
 while True:
-    review = input("\nEnter review (type 'exit' to quit): ")
+
+    review = input("\nEnter Review (type exit to quit): ")
 
     if review.lower() == "exit":
-        print("Program ended.")
         break
 
-    clean_review = preprocess(review)
+    result = predict_sentiment(review)
 
-    vector = vectorizer.transform([clean_review])
-
-    result = model.predict(vector)
-
-    print("Sentiment:", result[0])
-
+    print("Sentiment:", result)
